@@ -1,0 +1,59 @@
+channels:
+  - conda-forge
+  - bioconda
+  - anaconda
+dependencies:
+  - snakemake-minimal >=7.3
+  - jinja2
+  - matplotlib
+  - graphviz
+  - bcftools =1.15
+  - samtools =1.15
+  - bwa =0.7.17
+  - pysam =0.19
+  - pygments
+  - libiconv
+  - gettext
+  - gxx
+  - zlib
+  - python-devtools
+  - htslib
+  - r-minionqc
+  - fastqc
+  - minimap2
+  - miniasm
+  - nanofilt
+  - assembly-stats
+  - mummer
+  - flye
+  - shasta
+  - racon
+  - minipolish
+  - meryl
+  - samtools
+  - sniffles
+  - survivor
+  - pilon
+  - bwa
+  - nanopolish
+  - winnowmap
+  - survivor
+  - bzip2
+  - libffi
+  - ncurses
+  - libcurl
+  - virtualenv
+  - porechop
+  - pbsv
+  - cutesv
+  - nanovar
+  - svim
+  - nanosv
+  - perl
+  - nanosv
+  - pigz
+
+
+
+
+
