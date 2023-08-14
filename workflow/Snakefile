@@ -1,0 +1,341 @@
+import subprocess
+import math
+
+number_of_threads = max(int(subprocess.check_output("nproc", shell=True).decode().strip()),1)
+number_of_threads_for_parallel_processes = max(math.floor(number_of_threads/4),1)
+reference_genome_file_path = "/scratch/prj/sgdp_nanopore/Projects/09_structural_variant_benchmarking_dataset/longDnaScanMini/data/dataInput/referenceGenome/hg38.fa"
+annovar_directory = "/scratch/prj/sgdp_nanopore/software/annovar/"
+annotsv_file_path = "/scratch/prj/sgdp_nanopore/software/AnnotSV/bin/AnnotSV"
+
+
+# snakemake -np data/qualityControl/dataInput/test_fastqc.html data/qualityControl/readFilteringAndTrimming/test_fastqc.html data/qualityControl/assemblyAndErrorCorrection/test.txt data/qualityControl/alignment/test.txt data/variantCalling/structuralVariants/test_cuteSV_simplified_combiSV.vcf
+# snakemake --cores $(nproc) data/qualityControl/dataInput/test_fastqc.html data/qualityControl/readFilteringAndTrimming/test_fastqc.html data/qualityControl/assemblyAndErrorCorrection/test.txt data/qualityControl/alignment/test.txt data/variantCalling/structuralVariants/test_cuteSV_simplified_combiSV.vcf
+# snakemake --dag data/qualityControl/dataInput/test_fastqc.html data/qualityControl/readFilteringAndTrimming/test_fastqc.html data/qualityControl/assemblyAndErrorCorrection/test.txt data/qualityControl/alignment/test.txt data/variantCalling/structuralVariants/test_cuteSV_simplified_combiSV.vcf | dot -Tsvg > dag.svg
+rule all:
+    input:
+        "data/qualityControl/dataInput/{sample}_fastqc.html",
+        "data/qualityControl/readFilteringAndTrimming/{sample}_fastqc.html",
+        "data/qualityControl/assemblyAndErrorCorrection/{sample}.txt",
+        "data/qualityControl/alignment/{sample}.txt",
+        "data/variantCalling/structuralVariants/{sample}_cuteSV_simplified_combiSV.vcf"
+
+
+# snakemake -np data/dataInput/fastq/test.fastq.gz
+# snakemake --cores $(nproc) data/dataInput/fastq/test.fastq.gz
+rule data_input:
+    input:
+        "data/dataInput/fastq/{sample}.fastq"
+    output:
+        "data/dataInput/fastq/{sample}.fastq.gz"
+    threads:
+        number_of_threads
+    run:
+        shell("pigz -p {threads} {input}")
+ 
+
+# snakemake -np data/qualityControl/dataInput/test_fastqc.html
+# snakemake --cores $(nproc) data/qualityControl/dataInput/test_fastqc.html
+rule quality_control__data_input:
+    input:
+        "data/dataInput/fastq/{sample}.fastq.gz"
+    params:
+        "data/qualityControl/dataInput/"
+    output:
+        "data/qualityControl/dataInput/{sample}_fastqc.html"
+    threads:
+        number_of_threads
+    shell:
+        "fastqc {input} --outdir {params} -t {threads}"
+
+
+# snakemake -np data/readFilteringAndTrimming/test.fastq.gz
+# snakemake --cores $(nproc) data/readFilteringAndTrimming/test.fastq.gz
+rule read_filtering_and_trimming:
+    input:
+        "data/dataInput/fastq/{sample}.fastq.gz"
+    params:
+        nanofilt_input_file = "data/readFilteringAndTrimming/{sample}_porechop.fastq",
+        nanofilt_output_file = "data/readFilteringAndTrimming/{sample}.fastq"
+    output:
+        "data/readFilteringAndTrimming/{sample}.fastq.gz"
+    threads:
+        number_of_threads
+    run:
+        shell("""porechop -i {input} -t {threads} | NanoFilt -l 500 --maxlength 100000 \
+        --logfile data/readFilteringAndTrimming/nanofiltLog.txt | pigz -p {threads} > {output}""")
+
+# snakemake -np data/qualityControl/readFilteringAndTrimming/all_fastqc.html
+# snakemake --cores $(nproc) data/qualityControl/readFilteringAndTrimming/test_fastqc.html
+rule quality_control__read_filtering_and_trimming:
+    input:
+        "data/readFilteringAndTrimming/{sample}.fastq.gz"
+    params:
+        "data/qualityControl/readFilteringAndTrimming/"
+    output:
+        "data/qualityControl/readFilteringAndTrimming/{sample}_fastqc.html"
+    threads:
+        number_of_threads
+    shell:
+        "fastqc {input} --outdir {params} -t {threads}"
+
+# snakemake -np data/assembly/test.fasta.gz
+# snakemake --cores $(nproc) data/assembly/test.fasta.gz
+rule assembly_and_error_correction:
+    input:
+        "data/readFilteringAndTrimming/{sample}.fastq.gz"
+    params:
+        flye_output_file = "data/assembly/{sample}/assembly.fasta",
+        flye_output_path = "data/assembly/{sample}/",
+        flye_assembly_output_path = "data/assembly/{sample}/00-assembly",
+        flye_final_output_file  = "data/assembly/{sample}.fasta"
+    output:
+        "data/assembly/{sample}.fasta"
+    threads:
+        number_of_threads
+    run:
+        shell("mkdir -p {params.flye_output_path}")
+        shell("""
+        if [ -d {params.flye_assembly_output_path} ]
+        then
+            if [ -f {output} ]
+            then
+                flye --nano-raw {input} --out-dir {params.flye_output_path} -t {threads}
+            else
+                flye --nano-raw {input} --out-dir {params.flye_output_path} -t {threads} --resume
+            fi
+        else
+            flye --nano-raw {input} --out-dir {params.flye_output_path} -t {threads}
+        fi""")
+        shell("mv {params.flye_output_file} {params.flye_final_output_file}")
+        shell("rm -r {params.flye_output_path}")
+
+
+# snakemake -np data/qualityControl/assemblyAndErrorCorrection/test.txt
+# snakemake --cores $(nproc) data/qualityControl/assemblyAndErrorCorrection/test.txt
+rule quality_control__assembly:
+    input:
+        "data/assembly/{sample}.fasta"
+    output:
+        "data/qualityControl/assemblyAndErrorCorrection/{sample}.txt"
+    threads:
+        number_of_threads
+    run:
+        shell("assembly-stats {params} > {output}")
+
+
+# snakemake -np data/alignment/test.bam
+# snakemake --cores $(nproc) data/alignment/test.bam
+rule alignment:
+    input:
+        "data/assembly/{sample}.fasta"
+    params:
+        reference_genome_file = reference_genome_file_path,
+        minimap2_output_file = "data/alignment/{sample}.sam",
+        samtools_output_file = "data/alignment/{sample}.bam"
+    output:
+        "data/alignment/{sample}.bam"
+    threads:
+        number_of_threads
+    run:
+        shell("minimap2 --MD -ax map-ont -K 800000M -t {threads} {params.reference_genome_file} {input} > {params.minimap2_output_file}")
+        shell("samtools view --threads {threads} -bS {params.minimap2_output_file} > {params.samtools_output_file}")
+        shell("samtools sort --threads {threads} -o {params.samtools_output_file} {params.samtools_output_file}")
+        shell("samtools index -@ {threads} {params.samtools_output_file}")
+
+
+# snakemake -np data/qualityControl/alignment/test.txt
+# snakemake --cores $(nproc) data/qualityControl/alignment/test.txt
+rule quality_control__aligment:
+    input:
+        "data/alignment/{sample}.bam"
+    output:
+        "data/qualityControl/alignment/{sample}.txt"
+    threads:
+        number_of_threads
+    run:
+        shell("samtools depth {input} > {output}")
+
+# snakemake -np workflow/combiSV/
+# snakemake --cores $(nproc) workflow/combiSV/
+rule install_combiSV:
+    params:
+        "workflow/combiSV/"
+    threads:
+        number_of_threads
+    output: 
+        "workflow/combiSV/combiSV2.2.pl"
+    run:
+        shell("git clone https://github.com/ndierckx/combiSV.git {params}")
+
+# snakemake -np data/variantCalling/structuralVariants/test_cutesv.vcf
+# snakemake --cores $(nproc) data/variantCalling/structuralVariants/test_cutesv.vcf
+rule variant_calling__structural_variants__cutesv:
+    input:
+        "data/alignment/{sample}.bam"
+    params:
+        reference_genome_file_path,
+    threads:
+        number_of_threads_for_parallel_processes
+    output: 
+        "data/variantCalling/structuralVariants/{sample}_cutesv.vcf"
+    run:
+        shell("""cuteSV {input} {params} {output} . --threads {threads} --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 \
+        --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3""")
+
+
+# snakemake -np data/variantCalling/structuralVariants/test_sniffles.vcf
+# snakemake --cores $(nproc) data/variantCalling/structuralVariants/test_sniffles.vcf
+rule variant_calling__structural_variants__sniffles:
+    input:
+        "data/alignment/{sample}.bam"
+    params:
+        reference_genome_file_path,
+    threads:
+        number_of_threads_for_parallel_processes
+    output: 
+        "data/variantCalling/structuralVariants/{sample}_sniffles.vcf",
+    run:
+        shell("sniffles -t {threads} -i {input} -v {output} --allow-overwrite")
+
+
+# snakemake -np data/variantCalling/structuralVariants/test_svim.vcf
+# snakemake --cores $(nproc) data/variantCalling/structuralVariants/test_svim.vcf
+rule variant_calling__structural_variants__svim:
+    input:
+        "data/alignment/{sample}.bam"
+    params:
+        reference_genome_file = reference_genome_file_path,
+        svim_output_directory = "data/variantCalling/structuralVariants/{sample}/",
+        svim_output_file = "data/variantCalling/structuralVariants/{sample}/variants.vcf"
+    threads:
+        1
+    output: 
+        "data/variantCalling/structuralVariants/{sample}_svim.vcf",
+    run:
+        shell("mkdir -p {params.svim_output_directory}")
+        shell("svim alignment {params.svim_output_directory} {input} {params.reference_genome_file}")
+        shell("mv {params.svim_output_file} {output}")
+        shell("rm -r {params.svim_output_directory}")
+
+
+# snakemake -np data/variantCalling/structuralVariants/test_nanovar.vcf
+# snakemake --cores $(nproc) data/variantCalling/structuralVariants/test_nanovar.vcf
+rule variant_calling__structural_variants__nanovar:
+    input:
+        "data/alignment/{sample}.bam"
+    params:
+        reference_genome_file = reference_genome_file_path,
+        nanovar_output_directory = "data/variantCalling/structuralVariants/{sample}/",
+        nanovar_output_file = "data/variantCalling/structuralVariants/{sample}/{sample}.nanovar.pass.vcf"
+    threads:
+        number_of_threads_for_parallel_processes
+    output: 
+        "data/variantCalling/structuralVariants/{sample}_nanovar.vcf",
+    run:
+        shell("mkdir -p {params.nanovar_output_directory}")
+        shell("nanovar {input} {params.reference_genome_file} {params.nanovar_output_directory} -t {threads} -x ont --debug --force")
+        shell("mv {params.nanovar_output_file} {output}")
+        shell("rm -r {params.nanovar_output_directory}")
+
+
+# Test this on full dataset, if it is slow or errors, delete it #
+# nanovar data/alignment/test.bam /scratch/prj/sgdp_nanopore/Projects/09_structural_variant_benchmarking_dataset/longDnaScanMini/data/dataInput/referenceGenome/hg38.fa data/variantCalling/structuralVariants/ -t 20 -x ont --debug --force
+
+# snakemake -np data/variantCalling/structuralVariants/test_combiSV.vcf
+# snakemake --cores $(nproc) data/variantCalling/structuralVariants/test_combiSV.vcf
+rule variant_calling__structural_variants:
+    input:
+        cutesv_output_file = "data/variantCalling/structuralVariants/{sample}_cutesv.vcf",
+        sniffles_output_file = "data/variantCalling/structuralVariants/{sample}_sniffles.vcf",
+        svim_output_file = "data/variantCalling/structuralVariants/{sample}_svim.vcf",
+        nanovar_output_file = "data/variantCalling/structuralVariants/{sample}_nanovar.vcf"
+    params:
+        combisv_output_file_name = "{sample}_combiSV",
+        combisv_output_full_file_name = "{sample}_combiSV.vcf",
+        combisv_simplified_output_file_name = "simplified_{sample}_combiSV.vcf",
+        combisv_sniffles_output_file_name = "Sniffles_{sample}_combiSV.vcf",
+        combisv_cutesv_output_file_name = "cuteSV_{sample}_combiSV.vcf",
+        combisv_svim_output_file_name = "SVIM_{sample}_combiSV.vcf",
+        combisv_nanovar_output_file_name = "NanoVar_{sample}_combiSV.vcf"
+    threads:
+        number_of_threads
+    output: 
+        combisv_output_file = "data/variantCalling/structuralVariants/{sample}_combiSV.vcf",
+        simplified_combisv_output_file = "data/variantCalling/structuralVariants/{sample}_simplified_combiSV.vcf",
+        sniffles_combisv_output_file = "data/variantCalling/structuralVariants/{sample}_sniffles_combisv.vcf",
+        cutesv_combisv_output_file = "data/variantCalling/structuralVariants/{sample}_cutesv_combisv.vcf",
+        svim_combisv_output_file = "data/variantCalling/structuralVariants/{sample}_svim_combisv.vcf",
+        nanovar_combisv_output_file = "data/variantCalling/structuralVariants/{sample}_nanovar_combisv.vcf"
+    run:
+        shell("""perl workflow/combiSV/combiSV2.2.pl -sniffles {input.sniffles_output_file} -cutesv {input.cutesv_output_file} \
+        -svim {input.svim_output_file} -nanovar {input.nanovar_output_file} -o {params.combisv_output_file_name}""")
+        shell("mv {params.combisv_output_full_file_name} {output.combisv_output_file}")
+        shell("mv {params.combisv_simplified_output_file_name} {output.simplified_combisv_output_file}")
+        shell("mv {params.combisv_sniffles_output_file_name} {output.sniffles_combisv_output_file}")
+        shell("mv {params.combisv_cutesv_output_file_name} {output.cutesv_combisv_output_file}")
+        shell("mv {params.combisv_svim_output_file_name} {output.svim_combisv_output_file}")
+        shell("mv {params.combisv_nanovar_output_file_name} {output.nanovar_combisv_output_file}")
+
+
+# snakemake -np data/variantAnnotation/structuralVariants/test.tsv
+# snakemake --cores $(nproc) data/variantAnnotation/structuralVariants/test.tsv
+rule variant_annotation__structural_variants:
+    input:
+        "data/variantCalling/structuralVariants/{sample}_combiSV.vcf"
+    params:
+        annotsv_file_path = annotsv_file_path,
+        file_to_delete = "data/variantAnnotation/structuralVariants/{sample}.unannotated.tsv"
+    threads:
+        1
+    output: 
+        "data/variantAnnotation/structuralVariants/{sample}.tsv"
+    run:
+        shell("{params.annotsv_file_path} -SVinputFile {input} -outputFile {output} -svtBEDcol 5")
+        shell(" rm {params.file_to_delete}") 
+
+# snakemake -np data/variantCalling/singleNucleotidePolymorphisms/test.vcf
+# snakemake --cores $(nproc) data/variantCalling/singleNucleotidePolymorphisms/test.vcf
+rule variant_calling__single_nucleotide_polymorphisms:
+    input:
+        "data/alignment/{sample}.bam"
+    params:
+        reference_genome_file = reference_genome_file_path,
+        output_directory = "data/variantCalling/singleNucleotidePolymorphisms/{sample}/",
+        output_gz_file_path = "data/variantCalling/singleNucleotidePolymorphisms/{sample}/{sample}.snps.vcf.gz",
+        output_file_path = "data/variantCalling/singleNucleotidePolymorphisms/{sample}/{sample}.snps.vcf",
+        sample_name = "{sample}"
+    threads:
+        number_of_threads
+    output: 
+        "data/variantCalling/singleNucleotidePolymorphisms/{sample}.vcf"
+    run:
+        shell("mkdir -p {params.output_directory}")
+        shell("""NanoCaller --bam {input} --ref {params.reference_genome_file} --cpu {threads} --mode snps \
+        --output {params.output_directory} --prefix {params.sample_name}""")
+        shell("unpigz -p {threads} {params.output_gz_file_path}")
+        shell("mv {params.output_file_path} {output}")
+        shell("rm -r {params.output_directory}")
+
+
+
+# snakemake -np data/variantAnnotation/singleNucleotidePolymorphisms/test.vcf
+# snakemake --cores $(nproc) data/variantAnnotation/singleNucleotidePolymorphisms/test.vcf
+rule variant_annotation__single_nucleotide_polymorphisms:
+    input:
+        "data/variantCalling/singleNucleotidePolymorphisms/{sample}.vcf"
+    params:
+        annovar_script_file_path = annovar_directory + "table_annovar.pl",
+        annovar_humandb_directory = annovar_directory + "humandb/",
+        annovar_output_file_path = "data/variantAnnotation/singleNucleotidePolymorphisms/{sample}",
+        annovar_output_file_name = "data/variantAnnotation/singleNucleotidePolymorphisms/{sample}.hg38_multianno.vcf",
+        annovar_output_file_to_remove = "data/variantAnnotation/singleNucleotidePolymorphisms/{sample}.hg38_multianno.txt",
+        annovar_output_file_to_remove_two = "data/variantAnnotation/singleNucleotidePolymorphisms/{sample}.avinput"
+    threads:
+        number_of_threads
+    output: 
+        "data/variantAnnotation/singleNucleotidePolymorphisms/{sample}.vcf"
+    run:
+        shell("{params.annovar_script_file_path} {input} {params.annovar_humandb_directory} --thread {threads} --vcfinput -buildver hg38 -outfile {params.annovar_output_file_path} -remove -protocol refGene,cytoBand,exac03,avsnp147,dbnsfp33a,clinvar_20210501,intervar_20180118,gnomad211_genome -operation gx,r,f,f,f,f,f,f -nastring . -polish") 
+        shell("mv {params.annovar_output_file_name} {output}") 
+        shell("rm {params.annovar_output_file_to_remove} {params.annovar_output_file_to_remove_two}") 
+##### need to update to remove HG19 aswell #####
