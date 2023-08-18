@@ -13,10 +13,15 @@ def main(file_name):
         median_coverage=("coverage", "median"),
         min_coverage=("coverage", "min"),
         max_coverage=("coverage", "max"),
-        over_15_percentage=("coverage", lambda x: (x > 15).mean() * 100), 
-        over_o_percentage=("coverage", lambda x: (x > 0).mean() * 100),  
         shuffle="tasks"
     ).compute()
+
+    thresholds = [0, 5, 10, 15]
+    
+    for threshold in thresholds:
+        coverage_above_threshold = (coverage_data["coverage"] > threshold).astype(int)
+        over_threshold_percentage = coverage_above_threshold.groupby(coverage_data["chromosome"]).mean() * 100
+        summary_per_chromosome[f"over_{threshold}_percent"] = over_threshold_percentage.compute()
 
     summary_per_chromosome.reset_index(inplace=True)
 

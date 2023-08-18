@@ -44,7 +44,7 @@ rule quality_control__data_input:
     output:
         "data/qualityControl/dataInput/{sample}_fastqc.html"
     threads:
-        number_of_threads
+        number_of_threads_for_parallel_processes
     shell:
         "fastqc {input} --outdir {params} -t {threads} --memory 1000"
 
@@ -75,7 +75,7 @@ rule quality_control__read_filtering_and_trimming:
     output:
         "data/qualityControl/readFilteringAndTrimming/{sample}_fastqc.html"
     threads:
-        number_of_threads
+        number_of_threads_for_parallel_processes
     shell:
         "fastqc {input} --outdir {params} -t {threads}  --memory 1000"
 
@@ -119,7 +119,7 @@ rule quality_control__assembly:
     output:
         "data/qualityControl/assemblyAndErrorCorrection/{sample}.txt"
     threads:
-        number_of_threads
+        1
     run:
         shell("assembly-stats {input} > {output}")
 
@@ -172,7 +172,7 @@ rule install_combiSV:
     params:
         "workflow/combiSV/"
     threads:
-        number_of_threads
+        1
     output: 
         "workflow/combiSV/combiSV2.2.pl"
     run:
@@ -239,7 +239,7 @@ rule variant_calling__structural_variants__nanovar:
         nanovar_output_directory = "data/variantCalling/structuralVariants/{sample}/",
         nanovar_output_file = "data/variantCalling/structuralVariants/{sample}/{sample}.nanovar.pass.vcf"
     threads:
-        number_of_threads_for_parallel_processes
+        number_of_threads
     output: 
         "data/variantCalling/structuralVariants/{sample}_nanovar.vcf",
     run:
