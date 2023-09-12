@@ -38,7 +38,7 @@ df <-
     )
   ) %>%
   filter(FILTER == "PASS") %>%
-  relocate('#CHROM')
+  relocate('#CHROM', POS, ID, REF, ALT, QUAL, FILTER, INFO, FORMAT)
 
 
 fwrite(
